@@ -1,26 +1,51 @@
 const fs = require('fs');
 const csv = require('csv-parser');
+const csvWriter = require('csv-writer').createObjectCsvWriter;
 
-const directorio = 'data/';
+const dataDirectory = 'data/';
+const resultFolderPath = 'result/';
+const resultFile = resultFolderPath + 'order_prices.csv';
+const productsFile = 'products.csv';
+const ordersFile = 'orders.csv';
+const productsPath = dataDirectory + productsFile;
+const ordersPath = dataDirectory + ordersFile;
 
-const archivoCSV = 'order.csv';
+const orders = [];
+const products = {};
 
-const rutaCompleta = directorio + archivoCSV;
+// checks if the file exists
+if (fs.existsSync(productsPath)) {
+    fs.createReadStream(productsPath)
+        .pipe(csv())
+        .on('data', (order) => {
+            products[order.id] = parseFloat(order.cost); // creates an object 'products' were we have the id linked with its cost
+        })
+        .on('end', () => {
+            fs.createReadStream(ordersPath)
+                .pipe(csv())
+                .on('data', (order) => {
+                    const orderProducts = order.products.split(' ').map((productId) => parseFloat(productId)); // creates an array where are all the products bought in that order
+                    const orderCost = orderProducts.reduce((totalCost, productId) => totalCost + products[productId], 0); // sum of all product prices
+                    orders.push({ id: order.id, euros: orderCost });
+                })
+                .on('end', () => {
+                    // If the directory doesn't exist it will be created
+                    if (!fs.existsSync(resultFolderPath))
+                        fs.mkdirSync(resultFolderPath, { recursive: true }); // if there are more directories inside it will create all ones
 
-if (fs.existsSync(rutaCompleta)) {
-    const stream = fs.createReadStream(rutaCompleta)
-        .pipe(csv());
+                    // checks if the file exists
+                    const fileExists = fs.existsSync(resultFile);
 
-    // Manejar cada línea del archivo CSV
-    stream.on('data', (linea) => {
-        // Acceder a la información de cada línea
-        console.log('Información de la línea:', linea);
-    });
+                    const csvWriterOrders = csvWriter({
+                        path: resultFile,
+                        header: [{ id: 'id', title: 'id' }, { id: 'euros', title: 'euros' }],
+                        append: fileExists // If the file exists won't add headers
+                    });
 
-    // Manejar el final del archivo
-    stream.on('end', () => {
-        console.log('Lectura del archivo CSV completada.');
-    });
-} else {
-    console.log('El archivo CSV no existe.');
-}
+                    csvWriterOrders.writeRecords(orders)
+                        .then(() => console.log('[+] Order Prices written successfully'));
+                });
+        });
+} else
+    console.log(`[-] File ${productsFile} not found`);
+
